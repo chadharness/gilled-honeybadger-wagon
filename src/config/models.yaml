@@ -1,0 +1,50 @@
+model_policy: "pinned"
+
+entries:
+  embedder:
+    display_name: "Sentence Embedder (bge-small)"
+    model_id: "BAAI/bge-small-en-v1.5"
+    connection: "local-huggingface"
+    runtime: "sentence-transformers"
+    artifact_path: "models/embedder/"
+    params: "33M"
+    embedding_dim: 384
+
+  ood_detector:
+    display_name: "OOD Autoencoder"
+    model_id: "custom-autoencoder-384-64-384"
+    connection: "local-weights"
+    runtime: "torch"
+    artifact_path: "models/ood_autoencoder.pt"
+
+  agent_router:
+    display_name: "Agent Router (SetFit)"
+    model_id: "setfit-bge-small-router"
+    connection: "local-huggingface"
+    runtime: "setfit"
+    artifact_path: "models/router_setfit/"
+
+  gpt_4o_mini:
+    display_name: "GPT-4o Mini"
+    model_id: "gpt-4o-mini"
+    connection: "portkey-gateway"
+    provider: "openai"
+    portkey_model: "@openai/gpt-4o-mini"
+
+  claude_sonnet:
+    display_name: "Claude Sonnet 4.6"
+    model_id: "claude-sonnet-4-6"
+    connection: "portkey-gateway"
+    provider: "anthropic"
+    portkey_model: "@anthropic/claude-sonnet-4-6"
+
+  claude_opus:
+    display_name: "Claude Opus 4.6"
+    model_id: "claude-opus-4-6"
+    connection: "portkey-gateway"
+    provider: "anthropic"
+    portkey_model: "@anthropic/claude-opus-4-6"
+
+gateway_config:
+  name: "Portkey Gateway"
+  credentials: ".env (PORTKEY_API_KEY, PORTKEY_GATEWAY_URL)"

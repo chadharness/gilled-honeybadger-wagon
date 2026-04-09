@@ -1,0 +1,17 @@
+# PII detection patterns — externalized for translation boundary.
+# Each pattern is a regex with a label used for redaction tags.
+# Clients may customize these patterns for their environment.
+
+patterns:
+  ssn:
+    regex: '\b\d{3}-\d{2}-\d{4}\b'
+    description: "Social Security Number (XXX-XX-XXXX)"
+  email:
+    regex: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    description: "Email address"
+  phone:
+    regex: '\b(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
+    description: "Phone number (US format)"
+  account_number:
+    regex: '\b\d{8,17}\b'
+    description: "Account number (8-17 digit sequence)"

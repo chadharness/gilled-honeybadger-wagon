@@ -1,0 +1,237 @@
+# Domain Knowledge — Insight Agents Run 2
+#
+# This file is edited by domain experts without touching source code.
+# Loaded at runtime by both worker agents' planners and generators.
+#
+# Consumers:
+#   - Insight Generator planner: category classification + resolution path selection
+#   - Insight Generator generator: approach steps, required elements, framing rules
+#   - Tool library: key_columns define valid parameter enums for tools
+#   - NL2SQL pipeline: key_columns define the boundary for uncertainty signaling
+#
+# Sources: intent spec behavior blocks + engagement domain context + dataset
+#          characterization (deliverable_output.md, ig_reassessment_report.md).
+
+domain: "Commercial deposit analytics"
+
+# ---------------------------------------------------------------------------
+# Per-category analytical guidance for the Insight Generator
+# ---------------------------------------------------------------------------
+
+categories:
+
+  trend:
+    description: >
+      Trend analysis compares a metric across time periods to identify
+      direction, magnitude, and inflection points. Covers month-over-month,
+      quarter-over-quarter, growth rates, acceleration/deceleration, seasonal
+      patterns, and reversal detection.
+    required_elements:
+      - "direction (up/down/flat) per entity"
+      - "magnitude (percentage or absolute change)"
+      - "time period comparison (current vs prior)"
+      - "reversal flag if trend changed direction from prior period"
+      - "concentration analysis for declining entities (which product/segment drove it)"
+    approach: >
+      1. Identify the primary metric and time grain from the query.
+      2. Retrieve time series data for the relevant entities and periods.
+      3. Calculate period-over-period change (absolute and percentage) using compute_delta.
+      4. Apply trend_extraction to detect direction, reversals, and acceleration/deceleration.
+      5. For declining or decelerating entities, retrieve dimensional breakdown
+         (product, instrument, counterparty) to identify concentration.
+      6. Include total baseline for percentage-of-whole framing.
+      7. Frame changes as relative to the entity's own history, not just absolutes.
+    reference_example: >
+      Deposit inflows declined 12% month-over-month in March 2024, falling
+      from $48.2M to $42.4M. This reverses the upward trend from the prior
+      two months (+8% in January, +5% in February). The decline is
+      concentrated in the Commercial Real Estate line of business, which
+      saw a 23% drop — consistent with typical Q1 seasonal softening after
+      year-end settlements. Recommendation: compare against March 2023 to
+      assess whether the magnitude is within normal seasonal range.
+
+  benchmark:
+    description: >
+      Benchmark analysis compares entities (LOBs, counterparties, products,
+      payment instruments) against each other or against a group average to
+      identify relative performance. Includes peer group comparisons,
+      cross-metric assessments, and portfolio share analysis.
+    required_elements:
+      - "entity performance vs group average (specific delta)"
+      - "top and bottom performers identified"
+      - "relative framing ('above/below average by X%')"
+      - "peer group definition stated explicitly"
+      - "cross-metric synthesis when multiple metrics compared"
+    approach: >
+      1. Identify the entities being compared and the metric(s).
+      2. Retrieve entity-level data using get_aggregate with group_by.
+      3. Apply benchmark_comparison to compute group average and per-entity deltas.
+      4. For QoQ or temporal benchmarks, retrieve prior period and use compute_delta.
+      5. Retrieve portfolio total for share calculation.
+      6. Highlight top and bottom performers with specific values.
+      7. State the peer group definition explicitly (e.g., "among 10 counterparties").
+      8. For multi-metric comparisons, synthesize across metrics — an entity can
+         lead on one metric and lag on another.
+      9. Include temporal context if available — is the leader gaining or losing ground?
+    reference_example: >
+      Among the 10 counterparties, Eastern_Trust leads with $18.3M in net
+      deposits for Q3 — 42% above the group average of $12.9M. The bottom
+      two (First_Alliance: $6.1M, National_Services: $7.2M) each fall more
+      than 40% below average. Eastern_Trust's share of the portfolio grew
+      from 13% in Q2 to 16% in Q3, suggesting increasing concentration.
+      Recommendation: assess whether this concentration creates risk or
+      reflects healthy client relationship growth.
+
+  anomaly:
+    description: >
+      Anomaly analysis identifies entities or time periods that deviate
+      significantly from their historical baseline or peer norms. Covers
+      outlier transactions, sudden volume changes, multi-metric deviations,
+      and variance shifts.
+    required_elements:
+      - "what normal looks like for this entity/period (baseline mean, historical range)"
+      - "what was observed (specific values)"
+      - "deviation magnitude (z-score or percentage from norm)"
+      - "distinct profiles for differently-flagged entities"
+      - "no fraud implication — frame as 'unusual activity worth investigating'"
+    approach: >
+      1. Establish the baseline: retrieve historical time series for the entity
+         or time period using get_time_series.
+      2. Retrieve current period data using get_aggregate.
+      3. Apply anomaly_detection with the appropriate threshold (typically 2σ).
+      4. For flagged entities, retrieve dimensional breakdowns (instrument, product)
+         to help explain the anomaly.
+      5. Retrieve full monthly history for flagged entities to show whether
+         this is a sudden spike or gradual drift.
+      6. Quantify the deviation: z-scores for statistical anomalies, percentage
+         from norm for threshold-based detection.
+      7. Produce distinct profiles for differently-flagged entities — a client
+         with broad activity reduction across all metrics is a different signal
+         than one with only an outflow anomaly.
+      8. Frame as "unusual activity worth investigating" — suggest legitimate
+         explanations (large settlement, seasonal pattern, operational change)
+         before any negative inference.
+    framing_rules:
+      - "NEVER use: fraud, suspicious, illegal, criminal, money laundering"
+      - "ALWAYS use: unusual activity, worth investigating, warrants review, atypical"
+    reference_example: >
+      Johnson_LLC's September activity shows broad decline: inflows fell
+      2.77 standard deviations below the 8-month baseline, outflows 2.07σ
+      below, and net deposits 3.72σ below. This is a multi-dimensional
+      reduction, not a shift between inflow and outflow. In contrast,
+      Western_Capital shows a narrower signal — outflow-focused decline
+      (2.05σ) with reduced transaction frequency (2.78σ below baseline)
+      but inflows near normal. Both warrant review, but the patterns
+      suggest different underlying causes.
+
+# ---------------------------------------------------------------------------
+# Hybrid analysis assembly guidance
+# ---------------------------------------------------------------------------
+# Used when the planner classifies a query with multiple categories.
+# This is NOT a fourth category — it's assembly guidance for merging
+# per-category templates into a single coherent generation prompt.
+
+hybrid:
+  assembly_rules:
+    required_elements: "Union of all classified categories, deduplicated"
+    framing_rules: "Union — anomaly framing rules always apply when anomaly is present"
+    approach: "Primary category approach first, then secondary steps that extend it"
+  narrative_structure: >
+    Lead with the primary category's analytical arc. Introduce secondary
+    dimensions as they naturally extend the primary finding. Do NOT produce
+    separate sections per category — weave them into a single coherent
+    narrative. For example, an anomaly+benchmark query should: (1) identify
+    the anomalous entities, (2) immediately contextualize them against the
+    non-anomalous group, (3) synthesize what the combined picture reveals.
+    The reader should not be able to tell where anomaly analysis ends and
+    benchmark analysis begins.
+  step_count_guidance: >
+    Hybrid plans typically run 8–14 steps. If the plan exceeds 15 steps,
+    the planner is likely building two independent analyses instead of one
+    integrated analysis. The secondary category should add 3–5 steps that
+    reference primary results, not duplicate the primary retrieval pattern.
+
+# ---------------------------------------------------------------------------
+# Output formatting guidance
+# ---------------------------------------------------------------------------
+
+output_format:
+  rules:
+    - "Output must be plain text suitable for direct display."
+    - "No markdown formatting (no headers, bold, italic, lists with bullets)."
+    - "No LaTeX notation between numeric values."
+    - "Use plain numbers with units: '$48.2M' not '$48.2\\text{M}'."
+    - "Use newlines and indentation for structure, not markdown syntax."
+
+# ---------------------------------------------------------------------------
+# Schema summary for planner grounding (key columns only)
+# Full schema: data/schema_expanded.csv
+# ---------------------------------------------------------------------------
+#
+# key_columns defines the columns that the system's structured tools use
+# as parameter enums. Any column referenced in a tool's metric, group_by,
+# or filter parameter must be listed here. Columns outside key_columns
+# are accessible only via the NL2SQL escalation pipeline, which signals
+# uncertainty when using them.
+#
+# Column annotations:
+#   [metric]    — valid for get_aggregate metric, compute_delta, compute_statistics
+#   [group_by]  — valid for get_aggregate group_by, get_time_series group_by
+#   [filter]    — valid for filter_by_threshold, WHERE clause generation
+#   [time]      — valid for time_range parameters, get_time_series granularity
+
+key_columns:
+  time:
+    - SETTLEMENT_DATE          # DATE — primary date filter column [time]
+    - FRB_BUSINESS_DATE        # DATE — equals SETTLEMENT_DATE in sim [time]
+    - BUSINESS_YEAR            # INTEGER — derived from SETTLEMENT_DATE [filter, group_by]
+    - BUSINESS_MONTH_NUMBER    # INTEGER (1-12) — derived from SETTLEMENT_DATE [filter, group_by]
+    - BUSINESS_MONTH_NAME      # VARCHAR — derived from SETTLEMENT_DATE [filter, group_by]
+    - BUSINESS_MONTH_YEAR      # VARCHAR (YYYY-MM) — derived from SETTLEMENT_DATE [group_by]
+
+  amounts:
+    - INFLOW_AMOUNT            # FLOAT64 — cash inflow [metric]
+    - OUTFLOW_AMOUNT           # FLOAT64 — cash outflow [metric]
+    - NET_AMOUNT               # FLOAT64 — net (inflow - outflow) [metric]
+    - GROSS_AMOUNT             # FLOAT64 — gross amount [metric]
+
+  volume:
+    - INFLOW_TRANSACTION_VOLUME    # INT32 [metric]
+    - OUTFLOW_TRANSACTION_VOLUME   # INT32 [metric]
+    - TRANSACTION_VOLUME           # INT32 [metric]
+
+  counterparty:
+    - CPRTY_WCIS_GUP_NAME     # VARCHAR — counterparty group ultimate parent [group_by, filter]
+    - CPRTY_WCIS_NAME          # VARCHAR — counterparty WCIS name [group_by]
+    - CPRTY_ACCOUNT_NAME       # VARCHAR — counterparty account name [group_by]
+    - CPRTY_ACCOUNT_NUMBER     # VARCHAR [filter]
+    # NOTE: Counterparty columns are useful for benchmark and trend analyses
+    # (aggregation, ranking, concentration). They are NOT reliable for anomaly
+    # detection in the sim data because counterparties are randomly assigned
+    # across transactions, smoothing monthly aggregates. For entity-level
+    # anomaly detection, use WCIS_GUP_NAME (primary client) which carries
+    # the genuine anomaly signal.
+
+  account:
+    - WCIS_GUP_NAME            # VARCHAR — client group ultimate parent [group_by, filter]
+    - WCIS_NAME                # VARCHAR — client WCIS name [group_by]
+    - ACCOUNT_NAME             # VARCHAR [group_by]
+    - ACCOUNT_NUMBER           # VARCHAR [filter]
+    - ACCOUNT_TYPE             # VARCHAR — TYPE_A, TYPE_B, TYPE_C [group_by, filter]
+    - ACCOUNT_DOMICILE_STATE   # VARCHAR — 10 US states [group_by, filter]
+
+  business_dimension:
+    - LINE_OF_BUSINESS_LEVEL_1_NAME  # VARCHAR — top-level LOB [group_by, filter]
+    - LINE_OF_BUSINESS_LEVEL_2_NAME  # VARCHAR — second-level LOB [group_by, filter]
+    - LINE_OF_BUSINESS_LEVEL_3_NAME  # VARCHAR — third-level LOB [group_by, filter]
+    - PAYMENT_INSTRUMENT_TYPE        # VARCHAR — WIRE, ACH, CHECK, FED_FUNDS, BOOK_TRANSFER [group_by, filter]
+    - FINANCIAL_MARKET_UTILITY_NAME  # VARCHAR — Fedwire, CHIPS, ACH, etc. [group_by, filter]
+    - PRODUCT_LEVEL_1_NAME           # VARCHAR — Checking, CD, Money_Market, IRA, Savings [group_by, filter]
+    - PRODUCT_LEVEL_2_NAME           # VARCHAR [group_by, filter]
+    - NAICS_NAME                     # VARCHAR — industry classification [group_by, filter]
+    - CURRENCY                       # VARCHAR — USD, CAD, EUR, GBP [group_by, filter]
+    - LEGAL_ENTITY_NAME              # VARCHAR — WF_Bank_NA, WF_Advisors, etc. [group_by, filter]
+
+  record_type:
+    - TABLE_NAME                     # VARCHAR — OPENING_BALANCE, CLOSING_BALANCE, INTRADAY [filter]
+    - CASH_FLOW_TYPE                 # VARCHAR — INFLOW, OUTFLOW, INTERNAL [filter]
